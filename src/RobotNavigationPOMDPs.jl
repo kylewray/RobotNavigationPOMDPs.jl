@@ -14,27 +14,35 @@ using Distributions     # Normal
 
 function loop_angle(θ)
     fπ = float(π)
-    if θ > fπ
+    while θ > fπ
         θ -= 2.0 * fπ
-    elseif θ < -fπ
+    end
+    while θ < -fπ
         θ += 2.0 * fπ
     end
     return θ
 end
 
 
-function turn_to_angle(current_θ, desired_θ)
+function turn_to_angle(first_θ, second_θ)
     fπ = float(π)
+    θ₁ = loop_angle(first_θ)
+    θ₂ = loop_angle(second_θ)
 
-    if abs(current_θ - desired_θ) > fπ
-        if desired_θ > current_θ
-            current_θ += 2.0 * fπ
+    if abs(θ₁ - θ₂) > fπ
+        if θ₂ > θ₁
+            θ₁ += 2.0 * fπ
         else
-            desired_θ += 2.0 * fπ
+            θ₂ += 2.0 * fπ
         end
     end
 
-    return desired_θ - current_θ
+    return θ₂ - θ₁
+end
+
+
+function difference_of_angles(first_θ, second_θ)
+    return abs(turn_to_angle(first_θ, second_θ))
 end
 
 
@@ -46,6 +54,8 @@ end
 include("robot_navigation_pomdp.jl")
 export
     RobotNavigationPOMDP,
+    RobotNavigationMap,
+    RobotNavigationColor,
     RobotNavigationPose,
     RobotNavigationState,
     RobotNavigationStates,
