@@ -11,6 +11,16 @@ using Printf            # @printf
 using Random            # rand
 using Distributions     # Normal
 
+using FileIO            # joinpath
+import Base: rand       # rand(*, Distributions.Normal(.))
+
+using Images            # load
+using StaticArrays      # SVector (use for vector performance)
+using Cairo             # CairoContext, image, and so on...
+
+
+const SVec2 = SVector{2, Float64}
+
 
 function loop_angle(θ)
     fπ = float(π)
@@ -51,7 +61,7 @@ function permutations_with_replacement(X)
 end
 
 
-include("robot_navigation_pomdp.jl")
+include("model.jl")
 export
     RobotNavigationPOMDP,
     RobotNavigationMap,
@@ -62,8 +72,11 @@ export
     RobotNavigationAction,
     RobotNavigationActions,
     RobotNavigationObservation,
-    RobotNavigationObservations ###,
-    #RobotNavigationBeliefUpdater,
-    #render
+    RobotNavigationObservations
+
+include("visualization.jl")
+export
+    RobotNavigationVisualizer,
+    render_robot_navigation
 
 end # module RobotNavigationPOMDPs

@@ -1,16 +1,12 @@
-using FileIO
-using Images
-using LinearAlgebra
-using StatsBase
-
 @with_kw mutable struct RobotNavigationMap
     map_name::Symbol = :map
+    absolute_path::String = ""
     image # TODO: Figure out what this type is!
 
     function RobotNavigationMap(map_name::Symbol, filename::String)
-        absolutePath = joinpath(@__DIR__, "..", "maps", filename)
-        image = load(absolutePath)
-        return new(map_name, image)
+        absolute_path = joinpath(@__DIR__, "..", "maps", filename)
+        image = load(absolute_path)
+        return new(map_name, absolute_path, image)
     end
 end
 
@@ -45,8 +41,13 @@ end
     desired_θ::Real = 0.0
 end
 
+@with_kw mutable struct RobotNavigationScan
+    depth::Real = 0.0
+    color::RobotNavigationColor = WHITE
+end
+
 @with_kw mutable struct RobotNavigationObservation
-    scans::Vector{NamedTuple{(:depth, :color), Tuple{<:Real, RobotNavigationColor}}} = []
+    scans::Vector{RobotNavigationScan} = []
 end
 
 const RobotNavigationStates = Vector{RobotNavigationState}
@@ -72,6 +73,13 @@ const RobotNavigationObservations = Vector{RobotNavigationObservation}
     scan_range::Real = 10.0
     scan_depth_variance::Real = 0.1
     scan_color_observation_probability::Real = 0.9
+end
+
+
+@with_kw mutable struct RobotNavigationObservationDistribution
+    𝒫::RobotNavigationPOMDP
+    a::RobotNavigationAction
+    s′::RobotNavigationState
 end
 
 
@@ -210,10 +218,13 @@ function POMDPs.observations(𝒫::RobotNavigationPOMDP)
         for c in permutations_with_replacement(color_factors)
             depth_colors = []
             for i in 1:𝒫.num_scans
-                push!(depth_colors, (
-                    depth = d[i],
-                    color = c[i]
-                ))
+                push!(
+                    depth_colors,
+                    RobotNavigationScan(
+                        depth = d[i],
+                        color = c[i]
+                    )
+                )
             end
             o = RobotNavigationObservation(depth_colors)
             push!(𝒪, o)
@@ -296,26 +307,24 @@ function POMDPs.transition(𝒫::RobotNavigationPOMDP, s::RobotNavigationState, 
 end
 
 
-function POMDPs.observation(𝒫::RobotNavigationPOMDP, a::RobotNavigationAction, s′::RobotNavigationState)
-    𝒩d = Normal(0.0, 𝒫.scan_depth_variance)
+function deterministic_observation(𝒫::RobotNavigationPOMDP, a::RobotNavigationAction, s′::RobotNavigationState)
     s′′ = deepcopy(s′)
 
-    noisy_color(rng, s′′′) = begin
-        if rand(rng) < 𝒫.scan_color_observation_probability
-            # These colors are the observable ones. Other colors
-            # are not observable and are used for tasks.
-            for c in OBSERVABLE_COLORS
-                if iscolor(𝒫, s′′′, c)
-                    return c
-                end
+    deterministic_color(s′′′) = begin
+        # These colors are the observable ones. Other colors
+        # are not observable and are used for tasks.
+        for c in OBSERVABLE_COLORS
+            if iscolor(𝒫, s′′′, c)
+                return c
             end
         end
-        return rand(rng, OBSERVABLE_COLORS)
+
+        # If this s′′′ was in a non-observable color, then it
+        # is treated as empty space (white).
+        return WHITE
     end
 
-    noisy_depth_color(rng, s′′′) = begin
-        noise = rand(rng, 𝒩d)
-
+    deterministic_depth_color(s′′′) = begin
         # Depth is in meters, but the for loop is over mainly pixels.
         # Pixels should be bigger jumps, and since we are only detecting
         # obstacles over them, we set the max iterations to be based
@@ -338,7 +347,7 @@ function POMDPs.observation(𝒫::RobotNavigationPOMDP, a::RobotNavigationAction
             step_size_in_meters = min(𝒫.scan_range, 0.5 * 𝒫.meters_per_pixel)
 
             # We step with some noise (in meters).
-            step_size = step_size_in_meters # + rand(rng, 𝒩d) # TODO TODO TODO TODO TODO ???
+            step_size = step_size_in_meters
 
             s′′′.pose.x += step_size * cos(s′′′.pose.θ)
             s′′′.pose.y += step_size * sin(s′′′.pose.θ)
@@ -353,32 +362,75 @@ function POMDPs.observation(𝒫::RobotNavigationPOMDP, a::RobotNavigationAction
             end
         end
 
-        return (
-            depth = depth + noise,
-            color = noisy_color(rng, s′′′)
-        )
+        # NOTE: This s′′′ is updated to be in collision or max depth.
+        return RobotNavigationScan(depth, deterministic_color(s′′′))
     end
 
-    𝒪(rng) = begin
-        scans = []
+    scans = []
 
-        ϕhalf = 𝒫.scan_field_of_view / 2.0
-        if 𝒫.num_scans > 1
-            ϕstep = 𝒫.scan_field_of_view / (𝒫.num_scans - 1)
-            for ϕ in -ϕhalf:ϕstep:ϕhalf
-                s′′′ = deepcopy(s′′)
-                s′′′.pose.θ += loop_angle(ϕ)
-                push!(scans, noisy_depth_color(rng, s′′′))
-            end
-        else
+    ϕhalf = 𝒫.scan_field_of_view / 2.0
+    if 𝒫.num_scans > 1
+        ϕstep = 𝒫.scan_field_of_view / (𝒫.num_scans - 1)
+        for ϕ in -ϕhalf:ϕstep:ϕhalf
             s′′′ = deepcopy(s′′)
-            push!(scans, noisy_depth_color(rng, s′′′))
+            s′′′.pose.θ += loop_angle(ϕ)
+            push!(scans, deterministic_depth_color(s′′′))
+        end
+    else
+        s′′′ = deepcopy(s′′)
+        push!(scans, deterministic_depth_color(s′′′))
+    end
+
+    return RobotNavigationObservation(scans)
+end
+
+
+function deterministic_observation(od::RobotNavigationObservationDistribution)
+    return deterministic_observation(od.𝒫, od.a, od.s′)
+end
+
+
+function rand(rng::AbstractRNG, od::RobotNavigationObservationDistribution)
+    o = deterministic_observation(od)
+
+    for i in 1:length(o.scans)
+        if rand(rng) >= od.𝒫.scan_color_observation_probability
+            o.scans[i].color = rand(rng, OBSERVABLE_COLORS)
         end
 
-        return RobotNavigationObservation(scans)
+        𝒩d = Normal(o.scans[i].depth, od.𝒫.scan_depth_variance)
+        o.scans[i].depth = rand(rng, 𝒩d)
     end
 
-    return ImplicitDistribution(𝒪)
+    return o
+end
+
+
+function POMDPs.pdf(od::RobotNavigationObservationDistribution, o::RobotNavigationObservation)
+    o′ = deterministic_observation(od)
+
+    p = 1.0
+
+    for i in 1:length(o.scans)
+        if o.scans[i].color == o′.scans[i].color
+            p *= (
+                od.𝒫.scan_color_observation_probability
+                + (1.0 - od.𝒫.scan_color_observation_probability) * 1.0 / length(OBSERVABLE_COLORS)
+            )
+        else
+            p *= 1.0 / length(OBSERVABLE_COLORS)
+        end
+
+        𝒩d = Normal(o′.scans[i].depth, od.𝒫.scan_depth_variance)
+        p *= POMDPs.pdf(𝒩d, o.scans[i].depth)
+    end
+
+    return p
+end
+
+
+function POMDPs.observation(𝒫::RobotNavigationPOMDP, a::RobotNavigationAction, s′::RobotNavigationState)
+    return RobotNavigationObservationDistribution(𝒫, a, s′)
 end
 
 
@@ -439,7 +491,6 @@ function POMDPs.initialstate(𝒫::RobotNavigationPOMDP)
 end
 
 
-function POMDPs.discount(𝒫::RobotNavigationPOMDP)
-    return 0.95
-end
+POMDPs.discount(𝒫::RobotNavigationPOMDP) = 0.95
+POMDPs.isterminal(𝒫::RobotNavigationPOMDP) = false
 

@@ -5,9 +5,9 @@ using POMDPModels
 using POMDPTools
 using POMCPOW
 
-using Printf    # @printf
-using Random    # MersenneTwister, rand
-using Test      # @testset, @test
+using Printf        # @printf
+using Random        # MersenneTwister, rand
+using Test          # @testset, @test
 
 @testset "LoopAngle" begin
     fπ = float(π)
@@ -503,21 +503,21 @@ end
     end
 end
 
-#@testset "RobotNavigationPOMDPSolverPOMCPOW" begin
-#    @printf("Testing RobotNavigationPOMDP Solver POMCPOW...\n")
-#
-#    solver = POMCPOWSolver(criterion = MaxUCB(20.0))
-#    𝒫 = RobotNavigationPOMDP()
-#    planner = solve(solver, 𝒫)
-#
-#    hr = HistoryRecorder(max_steps = 100)
-#    hist = simulate(hr, 𝒫, planner)
-#    for (s, b, a, r, sp, o) in hist
-#        @show s, a, r, sp
-#    end
-#
-#    rhist = simulate(hr, 𝒫, RandomPolicy(𝒫))
-#    println("Cumulative Discounted Reward (for 1 simulation)")
-#    println("    Random: $(discounted_reward(rhist))")
-#    println("    POMCPOW: $(discounted_reward(hist))")
-#end
+@testset "RobotNavigationPOMDPSolverPOMCPOW" begin
+    @printf("Testing RobotNavigationPOMDP Solver POMCPOW...\n")
+
+    solver = POMCPOWSolver(criterion = MaxUCB(20.0), max_depth = 7) # max_depth = 10
+    𝒫 = RobotNavigationPOMDP()
+    planner = solve(solver, 𝒫)
+
+    hr = HistoryRecorder(max_steps = 100) # max_steps = 100
+    pomcpow_history = simulate(hr, 𝒫, planner)
+    for (s, b, a, r, sp, o) in pomcpow_history
+        @show s, a, r, sp
+    end
+
+    random_policy_history = simulate(hr, 𝒫, RandomPolicy(𝒫))
+    println("Cumulative Discounted Reward (for 1 simulation)")
+    println("    Random: $(discounted_reward(random_policy_history))")
+    println("    POMCPOW: $(discounted_reward(pomcpow_history))")
+end
