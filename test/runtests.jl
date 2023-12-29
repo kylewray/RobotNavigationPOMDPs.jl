@@ -55,7 +55,7 @@ end
     𝒪 = POMDPs.observations(𝒫)
     @printf("Number of Observations: %i\n", length(𝒪))
 
-    @test length(𝒮) == 6400
+    @test length(𝒮) == 400
     @test length(𝒜) == 8
     @test length(𝒪) == 1000
 
@@ -223,8 +223,8 @@ end
     s = RobotNavigationState(
         pose = RobotNavigationPose(
             # A black pixel minus robot size minus two steps in "default.png".
-            x = 4.0 * 𝒫.meters_per_pixel - 𝒫.robot_radius - 𝒫.move_xy_max_speed * 2.0,
-            y = 6.0 * 𝒫.meters_per_pixel - 𝒫.robot_radius - 𝒫.move_xy_max_speed * 2.0, 
+            x = 4.0 * 𝒫.meters_per_pixel - 𝒫.robot_radius - 𝒫.move_xy_max_speed * 0.5 * 𝒫.meters_per_pixel,
+            y = 6.0 * 𝒫.meters_per_pixel - 𝒫.robot_radius - 𝒫.move_xy_max_speed * 0.5 * 𝒫.meters_per_pixel, 
             θ = 0.0
         ),
         map_name = :map,
@@ -249,8 +249,8 @@ end
         s = RobotNavigationState(
             pose = RobotNavigationPose(
                 # A black pixel minus robot size minus three steps in "default.png".
-                x = 7.0 * 𝒫.meters_per_pixel - 𝒫.robot_radius - 𝒫.move_xy_max_speed * 3.0,
-                y = 5.0 * 𝒫.meters_per_pixel - 𝒫.robot_radius - 𝒫.move_xy_max_speed * 3.0, 
+                x = 7.0 * 𝒫.meters_per_pixel - 𝒫.robot_radius - 𝒫.move_xy_max_speed * 0.75 * 𝒫.meters_per_pixel,
+                y = 5.0 * 𝒫.meters_per_pixel - 𝒫.robot_radius - 𝒫.move_xy_max_speed * 0.75 * 𝒫.meters_per_pixel, 
                 θ = float(π)
             ),
             map_name = :map,
@@ -303,20 +303,22 @@ end
     for i in 1:30
         o = rand(rng, observation(𝒫, a, s′))
         for oi in o.scans
-            @test (oi.depth >= 9.0 && oi.depth <= 11.0)
+            @test (
+                oi.depth >= 2.0 * 𝒫.meters_per_pixel
+                && oi.depth <= 3.5 * 𝒫.meters_per_pixel
+            )
         end
 
         num_freespace_detections = 0
-        if o.scans[1].color == RobotNavigationPOMDPs.WHITE
-            num_freespace_detections += 1
+        for j in 1:𝒫.num_scans
+            if o.scans[j].color == RobotNavigationPOMDPs.WHITE
+                num_freespace_detections += 1
+            end
         end
-        if o.scans[𝒫.num_scans].color == RobotNavigationPOMDPs.WHITE
-            num_freespace_detections += 1
-        end
-        @test num_freespace_detections >= 1
+        @test num_freespace_detections <= 2
 
         num_wall_detections = 0
-        for j in 2:(𝒫.num_scans - 1)
+        for j in 1:𝒫.num_scans
             if o.scans[j].color == RobotNavigationPOMDPs.BLACK
                 num_wall_detections += 1
             end
@@ -328,11 +330,11 @@ end
             length(o.scans), 𝒫.num_scans
         )
         @printf(
-            "with %i of %i correct wall detections ",
+            "with %i of %i wall detections (min of 6) ",
             num_wall_detections, 𝒫.num_scans
         )
         @printf(
-            "and %i of %i correct freespace detections.\n",
+            "and %i of %i freespace detections (max of 2).\n",
             num_freespace_detections, 𝒫.num_scans
         )
     end

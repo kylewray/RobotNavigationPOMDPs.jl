@@ -2,11 +2,14 @@
     map_name::Symbol = :map
     absolute_path::String = ""
     image # TODO: Figure out what this type is!
+    image_width::Int = 0
+    image_height::Int = 0
 
     function RobotNavigationMap(map_name::Symbol, filename::String)
         absolute_path = joinpath(@__DIR__, "..", "maps", filename)
         image = load(absolute_path)
-        return new(map_name, absolute_path, image)
+        w, h = size(image, 2), size(image, 1)
+        return new(map_name, absolute_path, image, w, h)
     end
 end
 
@@ -59,7 +62,7 @@ const RobotNavigationObservations = Vector{RobotNavigationObservation}
                                                       RobotNavigationObservation}
     maps::Dict{Symbol, RobotNavigationMap} = Dict(:map => RobotNavigationMap(:map, "default.png"))
     size_of_map::Dict{Symbol, NamedTuple{(:width, :height), Tuple{Int, Int}}} = Dict(:map => (width = 10, height = 10))
-    meters_per_pixel::Real = 4.0
+    meters_per_pixel::Real = 1.0
     num_determinized_orientations::Int = 4 # NOTE: For deterministic only.
     max_tasks_per_map::Int = 1
     task_color_for_map::Dict{Symbol, Vector{RobotNavigationColor}} = Dict(:map => [MAGENTA])
@@ -70,7 +73,7 @@ const RobotNavigationObservations = Vector{RobotNavigationObservation}
     move_θ_variance::Real = 0.1
     num_scans::Int = 3
     scan_field_of_view::Real = float(π) / 2.0
-    scan_range::Real = 10.0
+    scan_range::Real = 5.0
     scan_depth_variance::Real = 0.1
     scan_color_observation_probability::Real = 0.9
 end

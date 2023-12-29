@@ -2,7 +2,7 @@ function prettystring(s::RobotNavigationState)
     return "RobotNavigationState(pose = ($(s.pose.x), $(s.pose.y), $(s.pose.θ)), map_name = $(s.map_name), task_color = $(s.task_color))"
 end
 
-Base.show(io::IO, s::RobotNavigationState) = println(io, prettystring(s))
+#Base.show(io::IO, s::RobotNavigationState) = println(io, prettystring(s))
 Base.show(io::IO, ::MIME"text/plain", s::RobotNavigationState) = println(io, prettystring(s))
 
 
@@ -10,7 +10,7 @@ function prettystring(a::RobotNavigationAction)
     return "RobotNavigationAction(desired_move = $(a.desired_move), desired_θ = $(a.desired_θ))"
 end
 
-Base.show(io::IO, a::RobotNavigationAction) = println(io, prettystring(a))
+#Base.show(io::IO, a::RobotNavigationAction) = println(io, prettystring(a))
 Base.show(io::IO, ::MIME"text/plain", a::RobotNavigationAction) = println(io, prettystring(a))
 
 
@@ -23,7 +23,7 @@ function prettystring(o::RobotNavigationObservation)
     return result
 end
 
-Base.show(io::IO, o::RobotNavigationObservation) = println(io, prettystring(o))
+#Base.show(io::IO, o::RobotNavigationObservation) = println(io, prettystring(o))
 Base.show(io::IO, ::MIME"text/plain", o::RobotNavigationObservation) = println(io, prettystring(o))
 
 
@@ -47,27 +47,20 @@ struct RobotNavigationVisualizer
     text::String
 end
 
+
 render_robot_navigation(𝒫::RobotNavigationPOMDP, step::Any; text::String = "") = RobotNavigationVisualizer(𝒫, step, text)
+
 
 function render_robot_navigation(ctx::CairoContext, 𝒫::RobotNavigationPOMDP, step::Any)
     s = step[:sp]
-    
-    # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
-    # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
-    # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
-    # TODO: Ok, so this equation is 0.25 m / 4.0 m/p = 1 pixel... This is bad.
-    # The reason is that I am drawing the entire image, which is 10 by 10 pixels.
-    # But then I scale that image by width / image.width and height / image.height.
-    # So, if you want to show the cricle of the robot, you need to scale both the x and y
-    # of the "arc" circle below, as well as the "radius" term in the "arc" function!
-    # Figure this out. (I tested manually placing a circle, and it worked). Good luck!
-    # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
-    # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
-    # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
 
-    radius = 𝒫.robot_radius / 𝒫.meters_per_pixel
+    # Get the surface size (unscaled pixels).
     width = ctx.surface.width
     height = ctx.surface.height
+
+    # Load the image and compute the unscaled pixels to scaled pixels factor.
+    image = read_from_png(𝒫.maps[s.map_name].absolute_path)
+    unscaledPixelsToScaledPixels = min(width, height) / min(image.width, image.height)
 
     # Render a gray background.
     Cairo.save(ctx)
@@ -81,15 +74,18 @@ function render_robot_navigation(ctx::CairoContext, 𝒫::RobotNavigationPOMDP, 
     # NOTE: "Cairo." is required also for scale for conflict with Distributions.
     # TODO: Use step[:bp] to get an alpha-ed distribution over the maps.
     Cairo.save(ctx)
-    image = read_from_png(𝒫.maps[s.map_name].absolute_path)
-    Cairo.scale(ctx, width / image.width, height / image.height)
+    Cairo.scale(ctx, unscaledPixelsToScaledPixels, unscaledPixelsToScaledPixels)
     set_source_surface(ctx, image, 0, 0)
-    pattern_set_filter(get_source(ctx), Cairo.FILTER_NEAREST)
+    pattern_set_filter(get_source(ctx), Cairo.FILTER_BILINEAR) #Cairo.FILTER_NEAREST)
     paint(ctx)
     Cairo.restore(ctx)
 
+    # Compute the robot and particle size.
+    radius = 𝒫.robot_radius / 𝒫.meters_per_pixel
+
     # Render the particle beliefs (if any).
     Cairo.save(ctx)
+    Cairo.scale(ctx, unscaledPixelsToScaledPixels, unscaledPixelsToScaledPixels)
     if haskey(step, :bp)
         bp = step[:bp]
         if bp isa AbstractParticleBelief
@@ -106,6 +102,7 @@ function render_robot_navigation(ctx::CairoContext, 𝒫::RobotNavigationPOMDP, 
 
     # Render the robot base circle.
     Cairo.save(ctx)
+    Cairo.scale(ctx, unscaledPixelsToScaledPixels, unscaledPixelsToScaledPixels)
     x, y = transform_coordinates(𝒫, s, SVec2(s.pose.x, s.pose.y))
     arc(ctx, x, y, radius, 0, 2.0 * float(π))
     set_source_rgb(ctx, 0.6, 0.6, 1.0)
@@ -114,6 +111,7 @@ function render_robot_navigation(ctx::CairoContext, 𝒫::RobotNavigationPOMDP, 
 
     # Render the robot's heading by a short line segment.
     Cairo.save(ctx)
+    Cairo.scale(ctx, unscaledPixelsToScaledPixels, unscaledPixelsToScaledPixels)
     move_to(ctx, x, y)
     point = SVec2(
         s.pose.x + 𝒫.meters_per_pixel * cos(s.pose.θ),
@@ -125,23 +123,38 @@ function render_robot_navigation(ctx::CairoContext, 𝒫::RobotNavigationPOMDP, 
     stroke(ctx)
     Cairo.restore(ctx)
 
-    println("spx, spy = ", s.pose.x, ", ", s.pose.y)
-    println("x, y = ", x, ", ", y)
-    println("x′, y′ = ", x′, ", ", y′)
+    #println("spx, spy = ", s.pose.x, ", ", s.pose.y)
+    #println("x, y = ", x, ", ", y)
+    #println("x′, y′ = ", x′, ", ", y′)
 
     return ctx
 end
 
+
 function Base.show(io::IO, mime::Union{MIME"text/html", MIME"image/svg+xml"}, 𝒱::RobotNavigationVisualizer)
-    c = CairoSVGSurface(io, 800, 600)
+    w, h = 0, 0
+    for (name, map) in 𝒱.𝒫.maps
+        w, h = max(w, map.image_width), max(h, map.image_height)
+    end
+
+    c = CairoRGBSurface(w, h)
     ctx = CairoContext(c)
     render_robot_navigation(ctx, 𝒱.𝒫, 𝒱.step)
-    return finish(c)
+
+    return finish(c, io)
 end
 
+
 function Base.show(io::IO, mime::MIME"image/png", 𝒱::RobotNavigationVisualizer)
-    c = CairoRGBSurface(800, 600)
+    w, h = 0, 0
+    for (name, map) in 𝒱.𝒫.maps
+        w, h = max(w, map.image_width), max(h, map.image_height)
+    end
+
+    c = CairoRGBSurface(w, h)
     ctx = CairoContext(c)
     render_robot_navigation(ctx, 𝒱.𝒫, 𝒱.step)
+
     return write_to_png(c, io)
 end
+
