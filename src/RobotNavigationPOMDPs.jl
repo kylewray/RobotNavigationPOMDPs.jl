@@ -2,26 +2,27 @@ module RobotNavigationPOMDPs
 
 using POMDPs
 using POMDPTools
-using POMDPModelTools   # Deterministic, ImplicitDistribution
-using ParticleFilters   # AbstractParticleBelief
+using POMDPModelTools       # Deterministic, ImplicitDistribution
+using ParticleFilters       # AbstractParticleBelief
 
-using IterTools         # product
-using Combinatorics     # powerset
-using Parameters        # @with_kw
-using Printf            # @printf
-using Random            # rand
-using Distributions     # Normal
+using IterTools             # product
+using Combinatorics         # powerset
+using Parameters            # @with_kw
+using Printf                # @printf
+using Random                # rand
+using Distributions         # Normal
 
-using FileIO            # joinpath
-import Base: rand, show # rand(*, Distributions.Normal(.)), show
+using FileIO                # joinpath
+import Base: rand, show     # rand(*, Distributions.Normal(.)), show
 
-using Images            # load
-using StaticArrays      # SVector (use for vector performance)
-using Graphics
-using Cairo             # CairoContext, image, and so on...
+using Images                # load
+using StaticArrays          # SVector (use for vector performance)
+using Makie                 # Visualization...
+using CairoMakie            # Visualization...
 
 
 const SVec2 = SVector{2, Float64}
+const SVec3 = SVector{3, Float64}
 
 
 function loop_angle(θ)
@@ -79,6 +80,7 @@ export
 include("visualization.jl")
 export
     RobotNavigationVisualizer,
-    render_robot_navigation
+    robot_navigation_visualizer,
+    robot_navigation_show
 
 end # module RobotNavigationPOMDPs

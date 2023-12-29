@@ -45,7 +45,8 @@ end
 end
 
 @with_kw mutable struct RobotNavigationScan
-    depth::Real = 0.0
+    ϕ::Real = 0.0       # Relative angle to robot's pose.
+    depth::Real = 0.0   # Relative depth to robot's pose.
     color::RobotNavigationColor = WHITE
 end
 
@@ -111,8 +112,8 @@ end
 
 function iscolor(𝒫::RobotNavigationPOMDP, s::RobotNavigationState, color::RobotNavigationColor)
     image = 𝒫.maps[s.map_name].image
-    height = round(Int, size(image, 1))
-    width = round(Int, size(image, 2))
+    height = 𝒫.maps[s.map_name].image_height
+    width = 𝒫.maps[s.map_name].image_width
 
     y = floor(Int, s.pose.y / 𝒫.meters_per_pixel) + 1
     x = floor(Int, s.pose.x / 𝒫.meters_per_pixel) + 1
@@ -220,10 +221,13 @@ function POMDPs.observations(𝒫::RobotNavigationPOMDP)
     for d in permutations_with_replacement(depth_factors)
         for c in permutations_with_replacement(color_factors)
             depth_colors = []
-            for i in 1:𝒫.num_scans
+
+            ϕstep = 𝒫.scan_field_of_view / (𝒫.num_scans - 1)
+            for (i, ϕ) in enumerate(-ϕhalf:ϕstep:ϕhalf)
                 push!(
                     depth_colors,
                     RobotNavigationScan(
+                        ϕ = loop_angle(ϕ),
                         depth = d[i],
                         color = c[i]
                     )
@@ -260,31 +264,46 @@ function POMDPs.transition(𝒫::RobotNavigationPOMDP, s::RobotNavigationState, 
         # Distance is in meters, but the for loop is over mainly pixels.
         # Pixels should be bigger jumps, and since we are only detecting
         # obstacles over them, we set the max iterations to be based
-        # on a half-pixel width, and allow for the step to be random.
+        # on a sub-pixel width, and allow for the step to be random.
         max_distance = 𝒫.move_xy_max_speed
-        max_half_pixel_iterations = 2 * ceil(𝒫.move_xy_max_speed / 𝒫.meters_per_pixel)
+        sub_pixel_multiplier = 0.1
+        max_iterations = max(
+            𝒫.maps[s′.map_name].image_width,
+            𝒫.maps[s′.map_name].image_height
+        ) / sub_pixel_multiplier
 
         # NOTE: Always start the robot at its radius to prevent collisions.
         distance = 𝒫.robot_radius
-        for i in 0:max_half_pixel_iterations
-            if iscolor(𝒫, s′, BLACK) || distance >= max_distance
-                break
-            end
-
-            # We are stepping at half-pixel lengths. However,
-            # if the meters per pixel is large (e.g. tiny image
-            # and robot is sub-pixel in size), then the step
-            # which is supposed to be in pixels for efficiency
-            # can actually be longer than the step in meters.
-            # Thus, we ensure for these cases it is bounded.
-            step_size_in_meters = min(𝒫.move_xy_max_speed, 0.5 * 𝒫.meters_per_pixel)
-
-            # We step with some noise (in meters).
-            step_size = step_size_in_meters + rand(rng, 𝒩xy)
+        for i in 1:max_iterations
+            # We step forward in sub-pixel meters.
+            step_size = sub_pixel_multiplier * 𝒫.meters_per_pixel
 
             s′.pose.x += step_size * cos(s′.pose.θ)
             s′.pose.y += step_size * sin(s′.pose.θ)
             distance += step_size
+
+            # If this is any observable color that is not white,
+            # then we can collide with it too.
+            if (any(iscolor(𝒫, s′, c)
+                    for c in OBSERVABLE_COLORS
+                    if c != WHITE)
+                || distance >= max_distance
+            )
+                s′.pose.x -= step_size * cos(s′.pose.θ)
+                s′.pose.y -= step_size * sin(s′.pose.θ)
+                distance -= step_size
+                break
+            end
+        end
+
+        # Attempt to add random noise to this step length. However,
+        # if it encounters a wall, undo this random step.
+        random_step_size = rand(rng, 𝒩xy)
+        s′.pose.x += random_step_size * cos(s′.pose.θ)
+        s′.pose.y += random_step_size * sin(s′.pose.θ)
+        if iscolor(𝒫, s′, BLACK) 
+            s′.pose.x -= random_step_size * cos(s′.pose.θ)
+            s′.pose.y -= random_step_size * sin(s′.pose.θ)
         end
 
         return s′
@@ -327,61 +346,60 @@ function deterministic_observation(𝒫::RobotNavigationPOMDP, a::RobotNavigatio
         return WHITE
     end
 
-    deterministic_depth_color(s′′′) = begin
+    deterministic_depth_color(ϕ, s′′′) = begin
         # Depth is in meters, but the for loop is over mainly pixels.
         # Pixels should be bigger jumps, and since we are only detecting
         # obstacles over them, we set the max iterations to be based
-        # on a half-pixel width, and allow for the step to be random.
+        # on a sub-pixel width, and allow for the step to be random.
         # NOTE: We use scan range instead of max depth (transition's move).
         max_depth = 𝒫.scan_range
-        max_half_pixel_iterations = 2 * ceil(𝒫.scan_range / 𝒫.meters_per_pixel)
+        sub_pixel_multiplier = 0.1
+        max_iterations = max(
+            𝒫.maps[s′′′.map_name].image_width,
+            𝒫.maps[s′′′.map_name].image_height
+        ) / sub_pixel_multiplier
 
-        # NOTE: Always start the robot at its radius to prevent collisions.
-        depth = 0.0
-        for i in 0:max_half_pixel_iterations
-            # We are stepping at half-pixel lengths. However,
-            # if the meters per pixel is large (e.g. tiny image
-            # and robot is sub-pixel in size), then the step
-            # which is supposed to be in pixels for efficiency
-            # can actually be longer than the step in meters.
-            # Thus, we ensure for these cases it is bounded.
-            # NOTE: We use scan range instead of max depth
-            # (transition's move).
-            step_size_in_meters = min(𝒫.scan_range, 0.5 * 𝒫.meters_per_pixel)
+        # NOTE: The depth of the sensor is assumed to be offset to the
+        # center point of the robot. In a real robot, this offset 
+        # is implicit because the sensors are physically offset from
+        # the robot.
+        depth = -𝒫.robot_radius
+        for i in 1:max_iterations
+            # We step forward in sub-pixel meters.
+            step_size = sub_pixel_multiplier * 𝒫.meters_per_pixel
 
-            # We step with some noise (in meters).
-            step_size = step_size_in_meters
-
-            s′′′.pose.x += step_size * cos(s′′′.pose.θ)
-            s′′′.pose.y += step_size * sin(s′′′.pose.θ)
+            s′′′.pose.x += step_size * cos(s′′′.pose.θ + ϕ)
+            s′′′.pose.y += step_size * sin(s′′′.pose.θ + ϕ)
             depth += step_size
 
-            # NOTE: We switch this to the end because we
-            # actually want to be inside the wall to get
-            # the color. It also checks for any not-white
-            # color to return as the color.
-            if !iscolor(𝒫, s′′′, WHITE) || depth >= max_depth
+            # If this is any observable color that is not white,
+            # then we can collide with it too.
+            if (any(iscolor(𝒫, s′′′, c)
+                    for c in OBSERVABLE_COLORS
+                    if c != WHITE)
+                || depth >= max_depth
+            )
                 break
             end
         end
+        depth = max(0.0, depth)
 
         # NOTE: This s′′′ is updated to be in collision or max depth.
-        return RobotNavigationScan(depth, deterministic_color(s′′′))
+        return RobotNavigationScan(ϕ, depth, deterministic_color(s′′′))
     end
 
     scans = []
 
     ϕhalf = 𝒫.scan_field_of_view / 2.0
-    if 𝒫.num_scans > 1
+    if 𝒫.num_scans > 1 
         ϕstep = 𝒫.scan_field_of_view / (𝒫.num_scans - 1)
         for ϕ in -ϕhalf:ϕstep:ϕhalf
             s′′′ = deepcopy(s′′)
-            s′′′.pose.θ += loop_angle(ϕ)
-            push!(scans, deterministic_depth_color(s′′′))
+            push!(scans, deterministic_depth_color(loop_angle(ϕ), s′′′))
         end
     else
         s′′′ = deepcopy(s′′)
-        push!(scans, deterministic_depth_color(s′′′))
+        push!(scans, deterministic_depth_color(0.0, s′′′))
     end
 
     return RobotNavigationObservation(scans)
@@ -397,6 +415,9 @@ function rand(rng::AbstractRNG, od::RobotNavigationObservationDistribution)
     o = deterministic_observation(od)
 
     for i in 1:length(o.scans)
+        # The ϕ angle is already set and is fixed.
+        #o.scans[i].ϕ = FIXED
+
         if rand(rng) >= od.𝒫.scan_color_observation_probability
             o.scans[i].color = rand(rng, OBSERVABLE_COLORS)
         end
@@ -480,8 +501,8 @@ function POMDPs.initialstate(𝒫::RobotNavigationPOMDP)
 
         pixel = random_initial_pixel(rng, θ, map_name, task_color)
 
-        x = pixel.x * 𝒫.meters_per_pixel + rand(rng) * 𝒫.meters_per_pixel
-        y = pixel.y * 𝒫.meters_per_pixel + rand(rng) * 𝒫.meters_per_pixel
+        x = (pixel.x + rand(rng) * 0.5 + 0.25) * 𝒫.meters_per_pixel
+        y = (pixel.y + rand(rng) * 0.5 + 0.25) * 𝒫.meters_per_pixel
 
         return RobotNavigationState(
             RobotNavigationPose(x, y, θ),

@@ -2,6 +2,7 @@ function prettystring(s::RobotNavigationState)
     return "RobotNavigationState(pose = ($(s.pose.x), $(s.pose.y), $(s.pose.θ)), map_name = $(s.map_name), task_color = $(s.task_color))"
 end
 
+
 #Base.show(io::IO, s::RobotNavigationState) = println(io, prettystring(s))
 Base.show(io::IO, ::MIME"text/plain", s::RobotNavigationState) = println(io, prettystring(s))
 
@@ -9,6 +10,7 @@ Base.show(io::IO, ::MIME"text/plain", s::RobotNavigationState) = println(io, pre
 function prettystring(a::RobotNavigationAction)
     return "RobotNavigationAction(desired_move = $(a.desired_move), desired_θ = $(a.desired_θ))"
 end
+
 
 #Base.show(io::IO, a::RobotNavigationAction) = println(io, prettystring(a))
 Base.show(io::IO, ::MIME"text/plain", a::RobotNavigationAction) = println(io, prettystring(a))
@@ -23,21 +25,24 @@ function prettystring(o::RobotNavigationObservation)
     return result
 end
 
+
 #Base.show(io::IO, o::RobotNavigationObservation) = println(io, prettystring(o))
 Base.show(io::IO, ::MIME"text/plain", o::RobotNavigationObservation) = println(io, prettystring(o))
 
 
-function transform_coordinates(𝒫::RobotNavigationPOMDP, s::RobotNavigationState, point::SVec2)
-    x, y = point
+function transform_coordinates(𝒫::RobotNavigationPOMDP, s::RobotNavigationState)
+    x, y, θ = s.pose.x, s.pose.y, s.pose.θ
+    #map_name = s.map_name
 
-    image = 𝒫.maps[s.map_name].image
-    height = round(Int, size(image, 1))
-    width = round(Int, size(image, 2))
+    #image = 𝒫.maps[map_name].image
+    #height = 𝒫.maps[map_name].image_height
+    #width = 𝒫.maps[map_name].image_width
 
-    yImage = floor(Int, y / 𝒫.meters_per_pixel) + 1
-    xImage = floor(Int, x / 𝒫.meters_per_pixel) + 1
+    yImage = y / 𝒫.meters_per_pixel
+    xImage = x / 𝒫.meters_per_pixel
+    θImage = θ
 
-    return xImage, yImage
+    return xImage, yImage, θImage
 end
 
 
@@ -48,113 +53,226 @@ struct RobotNavigationVisualizer
 end
 
 
-render_robot_navigation(𝒫::RobotNavigationPOMDP, step::Any; text::String = "") = RobotNavigationVisualizer(𝒫, step, text)
+robot_navigation_visualizer(𝒫::RobotNavigationPOMDP, step::Any; text::String = "") = RobotNavigationVisualizer(𝒫, step, text)
 
 
-function render_robot_navigation(ctx::CairoContext, 𝒫::RobotNavigationPOMDP, step::Any)
-    s = step[:sp]
+function render_robot_action(m::Any, 𝒫::RobotNavigationPOMDP, step::Any)
+    if !haskey(step, :a)
+        return
+    end
 
-    # Get the surface size (unscaled pixels).
-    width = ctx.surface.width
-    height = ctx.surface.height
+    a = step[:a]
 
-    # Load the image and compute the unscaled pixels to scaled pixels factor.
-    image = read_from_png(𝒫.maps[s.map_name].absolute_path)
-    unscaledPixelsToScaledPixels = min(width, height) / min(image.width, image.height)
+    # TODO
+end
 
-    # Render a gray background.
-    Cairo.save(ctx)
-    set_source_rgb(ctx, 0.8, 0.8, 0.8)
-    rectangle(ctx, 0.0, 0.0, width, height)
-    fill(ctx)
-    Cairo.restore(ctx)
 
-    # Render the map image.
-    # NOTE: "Cairo." is required due to name conflict with Images.
-    # NOTE: "Cairo." is required also for scale for conflict with Distributions.
-    # TODO: Use step[:bp] to get an alpha-ed distribution over the maps.
-    Cairo.save(ctx)
-    Cairo.scale(ctx, unscaledPixelsToScaledPixels, unscaledPixelsToScaledPixels)
-    set_source_surface(ctx, image, 0, 0)
-    pattern_set_filter(get_source(ctx), Cairo.FILTER_BILINEAR) #Cairo.FILTER_NEAREST)
-    paint(ctx)
-    Cairo.restore(ctx)
+function render_robot_state_prime(m::Any, 𝒫::RobotNavigationPOMDP, step::Any)
+    if !haskey(step, :sp)
+        return
+    end
 
-    # Compute the robot and particle size.
-    radius = 𝒫.robot_radius / 𝒫.meters_per_pixel
+    sp = step[:sp]
 
-    # Render the particle beliefs (if any).
-    Cairo.save(ctx)
-    Cairo.scale(ctx, unscaledPixelsToScaledPixels, unscaledPixelsToScaledPixels)
-    if haskey(step, :bp)
-        bp = step[:bp]
-        if bp isa AbstractParticleBelief
-            for s in particles(bp)
-                # NOTE: The heading p.θ is not rendered.
-                x, y = transform_coordinates(𝒫, s, SVec2(s.pose.x, s.pose.y))
-                arc(ctx, x, y, radius, 0, 2.0 * float(π))
-                set_source_rgba(ctx, 0.6, 0.6, 1.0, 0.3)
-                fill(ctx)
+    # Compute the robot and particle size, in *Figure*-pixel space (not image-pixel space).
+    figure_pixels_per_image_pixels = (
+        min(m.w, m.h)
+        / min(𝒫.maps[sp.map_name].image_width, 𝒫.maps[sp.map_name].image_width)
+    )
+    marker_size = (
+        (2.0 * 𝒫.robot_radius)
+        / 𝒫.meters_per_pixel
+        * figure_pixels_per_image_pixels
+    )
+
+    iterator = 1
+    for (map_name, map) in 𝒫.maps
+        ax = m.axes[iterator]
+
+        # Render the map image.
+        # NOTE: The `'` tick mark is key here. The `image` is a `Matrix`.
+        # The `'` tick mark transposes the image properly to render it.
+        # NOTE: The `interpolate` setting is to set it to `NEAREST` and
+        # become a crisp pixel image.
+        # TODO: Use step[:bp] to get an alpha-ed distribution over the maps.
+        image!(ax, 𝒫.maps[map_name].image', interpolate = false)
+
+        # Render the particle beliefs (if any).
+        if haskey(step, :bp)
+            bp = step[:bp]
+            if bp isa AbstractParticleBelief
+                for spb in particles(bp)
+                    if map_name == spb.map_name
+                        x, y, θ = transform_coordinates(𝒫, spb)
+
+                        scatter!(
+                            ax,
+                            [x],
+                            [y],
+                            rotations = [θ],
+                            color = :blue,
+                            alpha = 0.2,
+                            marker = :rtriangle, #'→',
+                            markersize = marker_size,
+                            #markerspace = :data,
+                        )
+                    end
+                end
             end
         end
+
+        # Render the robot base circle, if this is the true map.
+        if map_name == sp.map_name
+            x, y, θ = transform_coordinates(𝒫, sp)
+
+            scatter!(
+                ax,
+                [x],
+                [y],
+                rotations = [θ],
+                color = :green,
+                #alpha = 1.0,
+                marker = :rtriangle, #'→',
+                markersize = marker_size,
+                #markerspace = :data,
+            )
+        end
+
+        iterator += 1
     end
-    Cairo.restore(ctx)
+end
 
-    # Render the robot base circle.
-    Cairo.save(ctx)
-    Cairo.scale(ctx, unscaledPixelsToScaledPixels, unscaledPixelsToScaledPixels)
-    x, y = transform_coordinates(𝒫, s, SVec2(s.pose.x, s.pose.y))
-    arc(ctx, x, y, radius, 0, 2.0 * float(π))
-    set_source_rgb(ctx, 0.6, 0.6, 1.0)
-    fill(ctx)
-    Cairo.restore(ctx)
 
-    # Render the robot's heading by a short line segment.
-    Cairo.save(ctx)
-    Cairo.scale(ctx, unscaledPixelsToScaledPixels, unscaledPixelsToScaledPixels)
-    move_to(ctx, x, y)
-    point = SVec2(
-        s.pose.x + 𝒫.meters_per_pixel * cos(s.pose.θ),
-        s.pose.y + 𝒫.meters_per_pixel * sin(s.pose.θ)
+function render_robot_observation(m::Any, 𝒫::RobotNavigationPOMDP, step::Any)
+    if !haskey(step, :o) || !haskey(step, :sp)
+        return
+    end
+
+    sp = step[:sp]
+    o = step[:o]
+
+    # Compute the robot and particle size, in *Figure*-pixel space (not image-pixel space).
+    figure_pixels_per_image_pixels = (
+        min(m.w, m.h)
+        / min(𝒫.maps[sp.map_name].image_width, 𝒫.maps[sp.map_name].image_width)
     )
-    x′, y′ = transform_coordinates(𝒫, s, point)
-    line_to(ctx, x′, y′)
-    set_source_rgb(ctx, 0, 0, 0)
-    stroke(ctx)
-    Cairo.restore(ctx)
+    marker_size = (
+        (2.0 * 𝒫.robot_radius)
+        / 𝒫.meters_per_pixel
+        * figure_pixels_per_image_pixels
+    )
 
-    #println("spx, spy = ", s.pose.x, ", ", s.pose.y)
-    #println("x, y = ", x, ", ", y)
-    #println("x′, y′ = ", x′, ", ", y′)
-
-    return ctx
-end
-
-
-function Base.show(io::IO, mime::Union{MIME"text/html", MIME"image/svg+xml"}, 𝒱::RobotNavigationVisualizer)
-    w, h = 0, 0
-    for (name, map) in 𝒱.𝒫.maps
-        w, h = max(w, map.image_width), max(h, map.image_height)
+    # Figure out which map the robot is really in.
+    iterator = 1
+    for (map_name, map) in 𝒫.maps
+        if map_name == sp.map_name
+            break
+        end
+        iterator += 1
     end
 
-    c = CairoRGBSurface(w, h)
-    ctx = CairoContext(c)
-    render_robot_navigation(ctx, 𝒱.𝒫, 𝒱.step)
+    # Render all of the observations, starting from the robot's true state.
+    x, y, θ = transform_coordinates(𝒫, sp)
 
-    return finish(c, io)
-end
-
-
-function Base.show(io::IO, mime::MIME"image/png", 𝒱::RobotNavigationVisualizer)
-    w, h = 0, 0
-    for (name, map) in 𝒱.𝒫.maps
-        w, h = max(w, map.image_width), max(h, map.image_height)
+    for scan in o.scans
+        lines!(
+            m.axes[iterator],
+            [x, x + scan.depth * cos(θ + scan.ϕ)],
+            [y, y + scan.depth * sin(θ + scan.ϕ)],
+            color = :black,
+            alpha = 0.5,
+            linewidth = marker_size / 10.0,
+            linestyle = :dot
+        )
     end
 
-    c = CairoRGBSurface(w, h)
-    ctx = CairoContext(c)
-    render_robot_navigation(ctx, 𝒱.𝒫, 𝒱.step)
+    for scan in o.scans
+        sc = :white
 
-    return write_to_png(c, io)
+        if scan.color == BLACK
+            c = :black
+        elseif scan.color == WHITE
+            c = :white
+            sc = :black
+        elseif scan.color == GREEN
+            c = :green
+        elseif scan.color == RED
+            c = :red
+        elseif scan.color == BLUE
+            c = :blue
+        elseif scan.color == YELLOW
+            c = :yellow
+        elseif scan.color == CYAN
+            c = :cyan
+        elseif scan.color == MAGENTA
+            c = :magenta
+        else
+            c = :gray
+        end
+
+        scatter!(
+            m.axes[iterator],
+            [x + scan.depth * cos(θ + scan.ϕ)],
+            [y + scan.depth * sin(θ + scan.ϕ)],
+            rotations = [θ + scan.ϕ],
+            color = c,
+            #alpha = 1.0,
+            marker = :circle, #'→',
+            markersize = marker_size / 2.0,
+            strokewidth = marker_size / 23.0,
+            strokecolor = sc,
+        )
+    end
 end
+
+
+function robot_navigation_show(𝒱::RobotNavigationVisualizer)
+    base_figure_size_in_pixels = 1000
+
+    aspect_ratios = []
+    for (name, map) in 𝒱.𝒫.maps
+        push!(aspect_ratios, map.image_width / map.image_height)
+    end
+    max_aspect_ratio = maximum(aspect_ratios)
+
+    w = base_figure_size_in_pixels
+    h = base_figure_size_in_pixels * max_aspect_ratio
+
+    fig = Figure(size = (w, h))
+
+    axes = []
+    iterator = 1
+    for (map_name, map) in 𝒱.𝒫.maps
+        fig_r = floor(Int, iterator / 2) + 1
+        fig_c = (iterator - 1) % 2 + 1
+
+        # NOTE: Both `Images` and `Makie` have `Axis`.
+        ax = Makie.Axis(
+            fig[fig_r, fig_c],
+            #yreversed = true,
+            title = string(map_name)
+        )
+        push!(axes, ax)
+
+        iterator += 1
+    end
+
+    m = (fig = fig, axes = axes, w = w, h = h)
+    render_robot_action(m, 𝒱.𝒫, 𝒱.step)
+    render_robot_state_prime(m, 𝒱.𝒫, 𝒱.step)
+    render_robot_observation(m, 𝒱.𝒫, 𝒱.step)
+
+    return fig
+end
+
+
+Base.show(io::IO, mime::Union{MIME"text/html", MIME"image/svg+xml"}, 𝒱::RobotNavigationVisualizer) = robot_navigation_show(𝒱)
+
+
+# TODO: Figure out saving using `FileIO`'s (?) `save` instead of `Makie.save`
+# For now, you can still do: `Makie.save("my_file.pdf", robot_navigation_show(𝒱))`.
+#function Base.show(io::IO, mime::MIME"image/png", 𝒱::RobotNavigationVisualizer)
+#    fig = robot_navigation_show(𝒱)
+#    return save(io, fig)
+#end
 
