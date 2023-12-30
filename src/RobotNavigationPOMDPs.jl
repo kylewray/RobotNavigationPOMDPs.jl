@@ -83,4 +83,11 @@ export
     robot_navigation_visualizer,
     robot_navigation_show
 
+include("benchmarks.jl")
+export
+    RobotNavigationPOMDPToyDefault,
+    RobotNavigationPOMDPToyLocalization,
+    RobotNavigationPOMDPToySLAM,
+    RobotNavigationPOMDPMineSLAM
+
 end # module RobotNavigationPOMDPs

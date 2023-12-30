@@ -61,7 +61,7 @@ const RobotNavigationObservations = Vector{RobotNavigationObservation}
 @with_kw mutable struct RobotNavigationPOMDP <: POMDP{RobotNavigationState,
                                                       RobotNavigationAction,
                                                       RobotNavigationObservation}
-    maps::Dict{Symbol, RobotNavigationMap} = Dict(:map => RobotNavigationMap(:map, "default.png"))
+    maps::Dict{Symbol, RobotNavigationMap} = Dict(:map => RobotNavigationMap(:map, "toy_default.png"))
     size_of_map::Dict{Symbol, NamedTuple{(:width, :height), Tuple{Int, Int}}} = Dict(:map => (width = 10, height = 10))
     meters_per_pixel::Real = 1.0
     num_determinized_orientations::Int = 4 # NOTE: For deterministic only.
@@ -218,6 +218,7 @@ function POMDPs.observations(𝒫::RobotNavigationPOMDP)
             c for c in OBSERVABLE_COLORS
         ] for i in 1:𝒫.num_scans
     ]
+    ϕhalf = 𝒫.scan_field_of_view / 2.0
     for d in permutations_with_replacement(depth_factors)
         for c in permutations_with_replacement(color_factors)
             depth_colors = []

@@ -13,9 +13,10 @@ using Random
 
 function visualize()
     𝒫 = RobotNavigationPOMDP()
-    policy = RandomPolicy(𝒫)
 
     rng = MersenneTwister(23)
+
+    policy = RandomPolicy(𝒫, rng = rng)
 
     hr = HistoryRecorder(max_steps = 5, rng = rng)
     filter = SIRParticleFilter(𝒫, 200, rng = rng)
@@ -26,7 +27,7 @@ function visualize()
 
         𝒱 = robot_navigation_visualizer(𝒫, step)
         fig = robot_navigation_show(𝒱)
-        save("visualize_$i.pdf", fig)
+        save("visualize_$i.png", fig)
     end
 
 end
