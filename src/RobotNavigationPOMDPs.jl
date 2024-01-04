@@ -85,9 +85,9 @@ export
 
 include("benchmarks.jl")
 export
-    RobotNavigationPOMDPToyDefault,
-    RobotNavigationPOMDPToyLocalization,
-    RobotNavigationPOMDPToySLAM,
+    RobotNavigationPOMDPSimpleTest,
+    RobotNavigationPOMDPSimpleLocalization,
+    RobotNavigationPOMDPSimpleSLAM,
     RobotNavigationPOMDPMineSLAM
 
 end # module RobotNavigationPOMDPs

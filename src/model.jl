@@ -19,13 +19,15 @@ end
     RED
     GREEN
     BLUE
+    MAGENTA
     YELLOW
     CYAN
-    MAGENTA
 end
 
 const global OBSERVABLE_COLORS = (BLACK, WHITE, RED, GREEN, BLUE)
-const global ALL_COLORS = (BLACK, WHITE, RED, GREEN, BLUE, YELLOW, CYAN, MAGENTA)
+const global TASK_COLORS = (MAGENTA, YELLOW)
+const global INITIAL_STATE_COLOR = CYAN
+const global ALL_COLORS = (BLACK, WHITE, RED, GREEN, BLUE, MAGENTA, YELLOW, CYAN)
 
 @with_kw mutable struct RobotNavigationPose
     x::Real = 0.0
@@ -61,12 +63,18 @@ const RobotNavigationObservations = Vector{RobotNavigationObservation}
 @with_kw mutable struct RobotNavigationPOMDP <: POMDP{RobotNavigationState,
                                                       RobotNavigationAction,
                                                       RobotNavigationObservation}
-    maps::Dict{Symbol, RobotNavigationMap} = Dict(:map => RobotNavigationMap(:map, "toy_default.png"))
-    size_of_map::Dict{Symbol, NamedTuple{(:width, :height), Tuple{Int, Int}}} = Dict(:map => (width = 10, height = 10))
+    maps::Dict{Symbol, RobotNavigationMap} = Dict(
+        :map => RobotNavigationMap(:map, "toy_default.png")
+    )
+    size_of_map::Dict{Symbol, NamedTuple{(:width, :height), Tuple{Int, Int}}} = Dict(
+        :map => (width = 10, height = 10)
+    )
     meters_per_pixel::Real = 1.0
     num_determinized_orientations::Int = 4 # NOTE: For deterministic only.
     max_tasks_per_map::Int = 1
-    task_color_for_map::Dict{Symbol, Vector{RobotNavigationColor}} = Dict(:map => [MAGENTA])
+    task_color_for_map::Dict{Symbol, Vector{RobotNavigationColor}} = Dict(
+        :map => [MAGENTA]
+    )
     robot_radius::Real = 0.25
     move_xy_max_speed::Real = 1.0
     move_θ_max_speed::Real = float(π) / 4.0
@@ -75,7 +83,7 @@ const RobotNavigationObservations = Vector{RobotNavigationObservation}
     num_scans::Int = 3
     scan_field_of_view::Real = float(π) / 2.0
     scan_range::Real = 5.0
-    scan_depth_variance::Real = 0.1
+    scan_depth_variance::Real = 0.25
     scan_color_observation_probability::Real = 0.9
 end
 
@@ -98,12 +106,12 @@ function color_to_rgb(color::RobotNavigationColor)
         return (r = 1.0, g = 0.0, b = 0.0)
     elseif color == BLUE
         return (r = 0.0, g = 0.0, b = 1.0)
+    elseif color == MAGENTA
+        return (r = 1.0, g = 0.0, b = 1.0)
     elseif color == YELLOW
         return (r = 1.0, g = 1.0, b = 0.0)
     elseif color == CYAN
         return (r = 0.0, g = 1.0, b = 1.0)
-    elseif color == MAGENTA
-        return (r = 1.0, g = 0.0, b = 1.0)
     else
         return (r = 0.3333, g = 0.333, b = 0.33)
     end
@@ -318,6 +326,21 @@ function POMDPs.transition(𝒫::RobotNavigationPOMDP, s::RobotNavigationState, 
         return move(rng, s′)
     end
 
+    deterministically_progress_task(s′) = begin
+        for (i, c) in enumerate(𝒫.task_color_for_map[s′.map_name])
+            if iscolor(𝒫, s′, c) && s′.task_color == c
+                if i < length(𝒫.task_color_for_map[s′.map_name])
+                    s′.task_color = 𝒫.task_color_for_map[s′.map_name][i + 1]
+                else
+                    s′.task_color = 𝒫.task_color_for_map[s′.map_name][1]
+                end
+                break
+            end
+        end
+        return s′
+    end
+    deterministically_progress_task(s′′)
+
     if a.desired_move && !changed_θ
         return ImplicitDistribution(rng -> move(rng, s′′))
     end
@@ -360,11 +383,7 @@ function deterministic_observation(𝒫::RobotNavigationPOMDP, a::RobotNavigatio
             𝒫.maps[s′′′.map_name].image_height
         ) / sub_pixel_multiplier
 
-        # NOTE: The depth of the sensor is assumed to be offset to the
-        # center point of the robot. In a real robot, this offset 
-        # is implicit because the sensors are physically offset from
-        # the robot.
-        depth = -𝒫.robot_radius
+        depth = 0.0
         for i in 1:max_iterations
             # We step forward in sub-pixel meters.
             step_size = sub_pixel_multiplier * 𝒫.meters_per_pixel
@@ -383,7 +402,6 @@ function deterministic_observation(𝒫::RobotNavigationPOMDP, a::RobotNavigatio
                 break
             end
         end
-        depth = max(0.0, depth)
 
         # NOTE: This s′′′ is updated to be in collision or max depth.
         return RobotNavigationScan(ϕ, depth, deterministic_color(s′′′))
@@ -486,7 +504,7 @@ function POMDPs.initialstate(𝒫::RobotNavigationPOMDP)
                     map_name,
                     task_color
                 )
-                if iscolor(𝒫, s, CYAN)
+                if iscolor(𝒫, s, INITIAL_STATE_COLOR)
                     push!(initial_pixels, (y = py, x = px))
                 end
             end
