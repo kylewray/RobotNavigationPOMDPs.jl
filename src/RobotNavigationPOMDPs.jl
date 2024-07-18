@@ -2,7 +2,7 @@ module RobotNavigationPOMDPs
 
 using POMDPs
 using POMDPTools
-using POMDPModelTools       # Deterministic, ImplicitDistribution
+#using POMDPModelTools       # Deterministic, ImplicitDistribution
 using ParticleFilters       # AbstractParticleBelief
 
 using IterTools             # product

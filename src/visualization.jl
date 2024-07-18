@@ -144,7 +144,7 @@ function render_robot_state_prime!(m::Any, 𝒱::RobotNavigationVisualizer, step
                             ax,
                             [x],
                             [y],
-                            rotations = [-θ], # NOTE: Negative for yreverse; x,y correct.
+                            rotation = [-θ], # NOTE: Negative for yreverse; x,y correct.
                             color = :blue,
                             alpha = 0.2,
                             marker = :rtriangle, #'→',
@@ -164,7 +164,7 @@ function render_robot_state_prime!(m::Any, 𝒱::RobotNavigationVisualizer, step
                 ax,
                 [x],
                 [y],
-                rotations = [-θ], # NOTE: Negative for yreverse; x,y correct.
+                rotation = [-θ], # NOTE: Negative for yreverse; x,y correct.
                 color = :green,
                 #alpha = 1.0,
                 marker = :rtriangle, #'→',
@@ -176,7 +176,7 @@ function render_robot_state_prime!(m::Any, 𝒱::RobotNavigationVisualizer, step
                 ax,
                 [x],
                 [y],
-                rotations = [-θ], # NOTE: Negative for yreverse; x,y correct.
+                rotation = [-θ], # NOTE: Negative for yreverse; x,y correct.
                 color = :white,
                 #alpha = 1.0,
                 marker = '→',
@@ -260,7 +260,7 @@ function render_robot_observation!(m::Any, 𝒱::RobotNavigationVisualizer, step
             m.axes[map_index],
             [x + scan.depth * cos(θ + scan.ϕ)],
             [y + scan.depth * sin(θ + scan.ϕ)],
-            rotations = [-(θ + scan.ϕ)], # NOTE: Negative for yreverse; x,y correct.
+            rotation = [-(θ + scan.ϕ)], # NOTE: Negative for yreverse; x,y correct.
             color = c,
             #alpha = 1.0,
             marker = :circle, #'→',
@@ -436,7 +436,7 @@ function axis_and_render_task_progress_belief!(
             ax,
             [x],
             [y],
-            rotations = [pi/2],
+            rotation = [pi/2],
             color = :green,
             marker = :rtriangle,
             markersize = 23
