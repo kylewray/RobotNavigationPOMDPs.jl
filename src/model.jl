@@ -64,7 +64,7 @@ const RobotNavigationObservations = Vector{RobotNavigationObservation}
                                                       RobotNavigationAction,
                                                       RobotNavigationObservation}
     maps::Dict{Symbol, RobotNavigationMap} = Dict(
-        :map => RobotNavigationMap(:map, "toy_default.png")
+        :map => RobotNavigationMap(:map, "simple_test.png")
     )
     size_of_map::Dict{Symbol, NamedTuple{(:width, :height), Tuple{Int, Int}}} = Dict(
         :map => (width = 10, height = 10)

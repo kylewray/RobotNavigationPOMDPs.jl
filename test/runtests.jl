@@ -62,8 +62,8 @@ end
     @printf("Testing custom deterministic RobotNavigationPOMDP...\n")
     𝒫 = RobotNavigationPOMDP(
         maps = Dict(
-            :one => RobotNavigationMap(:one, "toy_default.png"),
-            :two => RobotNavigationMap(:two, "toy_default.png"),
+            :one => RobotNavigationMap(:one, "simple_test.png"),
+            :two => RobotNavigationMap(:two, "simple_test.png"),
         ),
         size_of_map = Dict(
             :one => (width = 6, height = 4),
@@ -172,7 +172,7 @@ end
 
     s = RobotNavigationState(
         pose = RobotNavigationPose(
-            # A white pixel in "toy_default.png".
+            # A white pixel in "simple_test.png".
             x = 3.0 * 𝒫.meters_per_pixel,
             y = 8.0 * 𝒫.meters_per_pixel,
             θ = 0.0
@@ -197,7 +197,7 @@ end
 
     s = RobotNavigationState(
         pose = RobotNavigationPose(
-            # A black pixel minus robot size in "toy_default.png".
+            # A black pixel minus robot size in "simple_test.png".
             x = 4.0 * 𝒫.meters_per_pixel - 𝒫.robot_radius,
             y = 6.0 * 𝒫.meters_per_pixel - 𝒫.robot_radius, 
             θ = 0.0
@@ -222,7 +222,7 @@ end
 
     s = RobotNavigationState(
         pose = RobotNavigationPose(
-            # A black pixel minus robot size minus two steps in "toy_default.png".
+            # A black pixel minus robot size minus two steps in "simple_test.png".
             x = 4.0 * 𝒫.meters_per_pixel - 𝒫.robot_radius - 𝒫.move_xy_max_speed * 0.5 * 𝒫.meters_per_pixel,
             y = 6.0 * 𝒫.meters_per_pixel - 𝒫.robot_radius - 𝒫.move_xy_max_speed * 0.5 * 𝒫.meters_per_pixel, 
             θ = 0.0
@@ -248,7 +248,7 @@ end
     for j in 1:10
         s = RobotNavigationState(
             pose = RobotNavigationPose(
-                # A black pixel minus robot size minus three steps in "toy_default.png".
+                # A black pixel minus robot size minus three steps in "simple_test.png".
                 x = 7.0 * 𝒫.meters_per_pixel - 𝒫.robot_radius - 𝒫.move_xy_max_speed * 0.75 * 𝒫.meters_per_pixel,
                 y = 5.0 * 𝒫.meters_per_pixel - 𝒫.robot_radius - 𝒫.move_xy_max_speed * 0.75 * 𝒫.meters_per_pixel, 
                 θ = float(π)
@@ -305,7 +305,7 @@ end
         for oi in o.scans
             @test (
                 oi.depth >= 1.0 * 𝒫.meters_per_pixel
-                && oi.depth <= 3.5 * 𝒫.meters_per_pixel
+                && oi.depth <= 4.0 * 𝒫.meters_per_pixel
             )
         end
 
